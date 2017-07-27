@@ -933,7 +933,6 @@ public class RealVoltDB implements VoltDBInterface, RestoreAgent.Callback, HostM
             // set the mode first thing
             m_mode = OperationMode.INITIALIZING;
             m_config = config;
-            m_startMode = null;
 
             // set a bunch of things to null/empty/new for tests
             // which reusue the process
@@ -3895,11 +3894,7 @@ public class RealVoltDB implements VoltDBInterface, RestoreAgent.Callback, HostM
     @Override
     public OperationMode getStartMode()
     {
-        if (m_startMode == null) {
-            return OperationMode.RUNNING;
-        } else {
-            return m_startMode;
-        }
+        return m_startMode;
     }
 
     @Override
