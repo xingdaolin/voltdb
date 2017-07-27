@@ -3895,7 +3895,11 @@ public class RealVoltDB implements VoltDBInterface, RestoreAgent.Callback, HostM
     @Override
     public OperationMode getStartMode()
     {
-        return m_startMode;
+        if (m_startMode == null) {
+            return OperationMode.RUNNING;
+        } else {
+            return m_startMode;
+        }
     }
 
     @Override
