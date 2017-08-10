@@ -28,6 +28,7 @@ from voltcli.checkstats import StatisticsProcedureException
 
 RELEASE_MAJOR_VERSION = 7
 RELEASE_MINOR_VERSION = 2
+available_hosts = {}
 
 @VOLT.Command(
     bundles=VOLT.AdminBundle(),
@@ -41,27 +42,27 @@ RELEASE_MINOR_VERSION = 2
 
 def status(runner):
     if runner.opts.continuous:
-        try:
-            while True:
-                # clear screen first
-                tmp = subprocess.call('clear', shell=True)
-                doStatus(runner)
-                time.sleep(2)  # used to be runner.opts.interval, default as 2 seconds
-        except KeyboardInterrupt, e:
-            pass  # don't care
+        while True:
+            # clear screen first
+            tmp = subprocess.call('clear', shell=True)
+            doStatus(runner)
+            time.sleep(2)  # used to be runner.opts.interval, default as 2 seconds
     else:
         doStatus(runner)
 
 def doStatus(runner):
-    # the cluster which voltadmin is running on always comes first
-    if runner.client.host != runner.opts.host:
-        runner.voltdb_connect(runner.opts.host.host,
-                              runner.opts.host.port,
-                              runner.opts.username,
-                              runner.opts.password,
-                              runner.opts.ssl_config)
+    # the cluster(host) which voltadmin is running on always comes first
+    # current node -> current cluster
 
+    if runner.client.host != runner.opts.host.host:
+        runner.voltdb_connect(runner.opts.host.host,
+                                  runner.opts.host.port,
+                                  runner.opts.username,
+                                  runner.opts.password,
+                                  runner.opts.ssl_config)            
+            
     clusterInfo = getClusterInfo(runner)
+            
     if runner.opts.json:
         printJSONSummary(clusterInfo)
     else:
@@ -88,15 +89,30 @@ def doStatus(runner):
                     pass  # ignore it
 
 def getClusterInfo(runner):
-    response = runner.call_proc('@SystemInformation',
-                                [VOLT.FastSerializer.VOLTTYPE_STRING],
-                                ['OVERVIEW'])
+    try:
+        response = runner.call_proc('@SystemInformation',
+                                    [VOLT.FastSerializer.VOLTTYPE_STRING],
+                                    ['OVERVIEW'])
+    except:    
+        runner.voltdb_connect("localhost",
+                              21212,
+                              runner.opts.username,
+                              runner.opts.password,
+                              runner.opts.ssl_config)
+        response = runner.call_proc('@SystemInformation',
+                                    [VOLT.FastSerializer.VOLTTYPE_STRING],
+                                    ['OVERVIEW'])
 
     # Convert @SystemInformation results to objects.
     hosts = Hosts(runner.abort)
+    global available_hosts
     for tuple in response.table(0).tuples():
         hosts.update(tuple[0], tuple[1], tuple[2])
-
+        
+    available_hosts = hosts.hosts_by_id
+    
+    for host in available_hosts.items():
+        print host[0]
     # get current version and root directory from an arbitrary node
     host = hosts.hosts_by_id.itervalues().next()
 
