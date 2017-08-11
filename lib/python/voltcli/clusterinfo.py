@@ -45,10 +45,14 @@ class RemoteCluster(object):
         self.status = status
         self.role = role
         self.members = set()
+        self.hosts_by_id = dict()
         self.producer_max_latency = dict()
 
     def add_remote_member(self, host_name):
         self.members.add(host_name)
+
+    def add_member(self, host_id, host_name):
+        self.hosts_by_id[host_id] = host_name
 
     def update_producer_latency(self, host_name, remote_cluster_id, delay):
         key = host_name + str(remote_cluster_id)

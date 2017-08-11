@@ -53,16 +53,31 @@ def status(runner):
 def doStatus(runner):
     # the cluster(host) which voltadmin is running on always comes first
     # current node -> current cluster
-
-    if runner.client.host != runner.opts.host.host:
-        runner.voltdb_connect(runner.opts.host.host,
+    global available_hosts
+    print len(available_hosts)
+    if len(available_hosts) == 0:
+        print "check localhost"
+        if runner.client.host != runner.opts.host.host:
+            runner.voltdb_connect(runner.opts.host.host,
                                   runner.opts.host.port,
                                   runner.opts.username,
                                   runner.opts.password,
-                                  runner.opts.ssl_config)            
-            
-    clusterInfo = getClusterInfo(runner)
-            
+                                  runner.opts.ssl_config)
+        clusterInfo = getClusterInfo(runner)  
+    else:    
+        print "check available hosts"
+        for host in available_hosts.items():
+            runner.voltdb_connect(host[1].hostname,
+                                  host[1].clientport,
+                                  runner.opts.username,
+                                  runner.opts.password,
+                                  runner.opts.ssl_config)   
+            clusterInfo = getClusterInfo(runner)
+            if clusterInfo == None:
+                continue
+            else: 
+                break
+    
     if runner.opts.json:
         printJSONSummary(clusterInfo)
     else:
@@ -71,11 +86,11 @@ def doStatus(runner):
     if runner.opts.dr:
         # repeat the process to discover remote cluster.
         for clusterId, remoteCluster in clusterInfo.remoteclusters_by_id.items():
-            for remoteHost in remoteCluster.members:
+            for id,remoteHost in remoteCluster.hosts_by_id.items():
                 hostname = remoteHost.split(':')[0]
                 try:
                     runner.__voltdb_connect__(hostname,
-                                             runner.opts.host.port,
+                                             21216,
                                              runner.opts.username,
                                              runner.opts.password,
                                              runner.opts.ssl_config)
@@ -89,30 +104,20 @@ def doStatus(runner):
                     pass  # ignore it
 
 def getClusterInfo(runner):
-    try:
-        response = runner.call_proc('@SystemInformation',
-                                    [VOLT.FastSerializer.VOLTTYPE_STRING],
-                                    ['OVERVIEW'])
-    except:    
-        runner.voltdb_connect("localhost",
-                              21212,
-                              runner.opts.username,
-                              runner.opts.password,
-                              runner.opts.ssl_config)
-        response = runner.call_proc('@SystemInformation',
-                                    [VOLT.FastSerializer.VOLTTYPE_STRING],
-                                    ['OVERVIEW'])
+    global available_hosts
+    response = runner.call_proc('@SystemInformation',
+                                [VOLT.FastSerializer.VOLTTYPE_STRING],
+                                ['OVERVIEW'])
+    if response.response.status != 1:
+        return None;
 
     # Convert @SystemInformation results to objects.
     hosts = Hosts(runner.abort)
-    global available_hosts
     for tuple in response.table(0).tuples():
         hosts.update(tuple[0], tuple[1], tuple[2])
         
     available_hosts = hosts.hosts_by_id
-    
-    for host in available_hosts.items():
-        print host[0]
+
     # get current version and root directory from an arbitrary node
     host = hosts.hosts_by_id.itervalues().next()
 
@@ -197,11 +202,12 @@ def getClusterInfo(runner):
 
         for tuple in response.table(1).tuples():
             remote_cluster_id = tuple[4]
+            host_id = tuple[1]
             covering_host = tuple[7]
             last_applied_ts = tuple[9]
             if covering_host != '':
                 cluster.get_remote_cluster(remote_cluster_id).add_remote_member(covering_host)
-
+                cluster.get_remote_cluster(remote_cluster_id).add_member(host_id, covering_host)
     return cluster
 
 def printPlainSummary(cluster):
@@ -287,5 +293,3 @@ def printJSONSummary(cluster):
     }
     jsonStr = json.dumps(body)
     print jsonStr
-
-
