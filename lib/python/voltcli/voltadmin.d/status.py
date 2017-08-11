@@ -29,6 +29,7 @@ from voltcli.checkstats import StatisticsProcedureException
 RELEASE_MAJOR_VERSION = 7
 RELEASE_MINOR_VERSION = 2
 available_hosts = {}
+remote_cluster_hosts = {}
 
 @VOLT.Command(
     bundles=VOLT.AdminBundle(),
@@ -54,15 +55,15 @@ def doStatus(runner):
     # the cluster(host) which voltadmin is running on always comes first
     # current node -> current cluster
     global available_hosts
-    print len(available_hosts)
     if len(available_hosts) == 0:
-        print "check localhost"
         if runner.client.host != runner.opts.host.host:
             runner.voltdb_connect(runner.opts.host.host,
                                   runner.opts.host.port,
                                   runner.opts.username,
                                   runner.opts.password,
                                   runner.opts.ssl_config)
+        else:
+            print "we just connect locally"
         clusterInfo = getClusterInfo(runner)  
     else:    
         print "check available hosts"
@@ -84,13 +85,16 @@ def doStatus(runner):
         printPlainSummary(clusterInfo)
 
     if runner.opts.dr:
+        print "we are in the dr"
         # repeat the process to discover remote cluster.
-        for clusterId, remoteCluster in clusterInfo.remoteclusters_by_id.items():
+        if clusterInfo != None:
+            remote_cluster_hosts = clusterInfo.remoteclusters_by_id.items()
+        for clusterId, remoteCluster in remote_cluster_hosts:
             for id,remoteHost in remoteCluster.hosts_by_id.items():
                 hostname = remoteHost.split(':')[0]
                 try:
                     runner.__voltdb_connect__(hostname,
-                                             21216,
+                                             runner.opts.host.port,
                                              runner.opts.username,
                                              runner.opts.password,
                                              runner.opts.ssl_config)
@@ -115,7 +119,6 @@ def getClusterInfo(runner):
     hosts = Hosts(runner.abort)
     for tuple in response.table(0).tuples():
         hosts.update(tuple[0], tuple[1], tuple[2])
-        
     available_hosts = hosts.hosts_by_id
 
     # get current version and root directory from an arbitrary node
@@ -230,6 +233,7 @@ def printPlainSummary(cluster):
     hostHeader = '{:>8}{:>16}'.format("HostId", "Host Name")
     for clusterId, remoteCluster in cluster.remoteclusters_by_id.items():
         hostHeader += '{:>20}'.format("Cluster " + str(clusterId) + " (" + remoteCluster.status + ")")
+
     rows = list()
     for hostId, hostname in cluster.hosts_by_id.items():
         row = "{:>8}{:>16}".format(hostId, hostname)
