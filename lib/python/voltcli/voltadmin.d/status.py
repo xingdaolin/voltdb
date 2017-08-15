@@ -203,7 +203,6 @@ def getClusterInfo(runner):
 
         for tuple in response.table(1).tuples():
             remote_cluster_id = tuple[4]
-            host_id = tuple[1]
             covering_host = tuple[7]
             last_applied_ts = tuple[9]
             if covering_host != '':
