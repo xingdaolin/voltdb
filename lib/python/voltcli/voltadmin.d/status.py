@@ -234,7 +234,10 @@ def printPlainSummary(cluster):
     for hostId, hostname in cluster.hosts_by_id.items():
         row = "{:>8}{:>16}".format(hostId, hostname)
         for clusterId, remoteCluster in cluster.remoteclusters_by_id.items():
-            row += '{:>17} s'.format(remoteCluster.producer_max_latency[hostname + str(clusterId)])
+            try:
+                row += '{:>17} s'.format(remoteCluster.producer_max_latency[hostname + str(clusterId)])
+            except Exception, e:
+                pass
         rows.append(row)
 
     sys.stdout.write(header1)
