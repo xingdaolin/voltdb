@@ -28,8 +28,8 @@ from voltcli.checkstats import StatisticsProcedureException
 
 RELEASE_MAJOR_VERSION = 7
 RELEASE_MINOR_VERSION = 2
-available_hosts = {}
-remote_cluster_hosts = {}
+available_hosts = []
+remote_clusters = {}
 
 @VOLT.Command(
     bundles=VOLT.AdminBundle(),
@@ -53,31 +53,29 @@ def status(runner):
 
 def doStatus(runner):
     # the cluster(host) which voltadmin is running on always comes first
-    # current node -> current cluster
     global available_hosts
     if len(available_hosts) == 0:
         if runner.client.host != runner.opts.host.host:
-            runner.voltdb_connect(runner.opts.host.host,
+            runner.__voltdb_connect__(runner.opts.host.host,
                                   runner.opts.host.port,
                                   runner.opts.username,
                                   runner.opts.password,
                                   runner.opts.ssl_config)
-        else:
-            print "we just connect locally"
-        clusterInfo = getClusterInfo(runner)  
+        clusterInfo = getClusterInfo(runner)
+        available_hosts.append(runner.opts.host.host)
     else:    
-        print "check available hosts"
-        for host in available_hosts.items():
-            runner.voltdb_connect(host[1].hostname,
-                                  host[1].clientport,
+        for hostname in available_hosts:
+            try:
+                runner.__voltdb_connect__(hostname,
+                                  runner.opts.host.port,
                                   runner.opts.username,
                                   runner.opts.password,
                                   runner.opts.ssl_config)   
-            clusterInfo = getClusterInfo(runner)
-            if clusterInfo == None:
-                continue
-            else: 
-                break
+                clusterInfo = getClusterInfo(runner)
+                if clusterInfo != None: 
+                    break
+            except:
+                pass
     
     if runner.opts.json:
         printJSONSummary(clusterInfo)
@@ -85,11 +83,10 @@ def doStatus(runner):
         printPlainSummary(clusterInfo)
 
     if runner.opts.dr:
-        print "we are in the dr"
         # repeat the process to discover remote cluster.
         if clusterInfo != None:
-            remote_cluster_hosts = clusterInfo.remoteclusters_by_id.items()
-        for clusterId, remoteCluster in remote_cluster_hosts:
+            remote_clusters = clusterInfo.remoteclusters_by_id.items()
+        for clusterId, remoteCluster in remote_clusters:
             for id,remoteHost in remoteCluster.hosts_by_id.items():
                 hostname = remoteHost.split(':')[0]
                 try:
@@ -106,7 +103,7 @@ def doStatus(runner):
                     break
                 except Exception, e:
                     pass  # ignore it
-
+    
 def getClusterInfo(runner):
     global available_hosts
     response = runner.call_proc('@SystemInformation',
@@ -119,7 +116,10 @@ def getClusterInfo(runner):
     hosts = Hosts(runner.abort)
     for tuple in response.table(0).tuples():
         hosts.update(tuple[0], tuple[1], tuple[2])
-    available_hosts = hosts.hosts_by_id
+
+    for hostId, hostInfo in hosts.hosts_by_id.items():
+        if hostInfo.hostname not in available_hosts:
+            available_hosts.append(hostInfo.hostname)
 
     # get current version and root directory from an arbitrary node
     host = hosts.hosts_by_id.itervalues().next()
@@ -209,7 +209,6 @@ def getClusterInfo(runner):
             covering_host = tuple[7]
             last_applied_ts = tuple[9]
             if covering_host != '':
-                cluster.get_remote_cluster(remote_cluster_id).add_remote_member(covering_host)
                 cluster.get_remote_cluster(remote_cluster_id).add_member(host_id, covering_host)
     return cluster
 
