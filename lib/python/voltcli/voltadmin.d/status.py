@@ -84,10 +84,8 @@ def doStatus(runner):
 
     if runner.opts.dr:
         # repeat the process to discover remote cluster.
-        if clusterInfo != None:
-            remote_clusters = clusterInfo.remoteclusters_by_id.items()
-        for clusterId, remoteCluster in remote_clusters:
-            for id,remoteHost in remoteCluster.hosts_by_id.items():
+        for clusterId, remoteCluster in clusterInfo.remoteclusters_by_id.items():
+            for remoteHost in remoteCluster.members:
                 hostname = remoteHost.split(':')[0]
                 try:
                     runner.__voltdb_connect__(hostname,
@@ -209,7 +207,7 @@ def getClusterInfo(runner):
             covering_host = tuple[7]
             last_applied_ts = tuple[9]
             if covering_host != '':
-                cluster.get_remote_cluster(remote_cluster_id).add_member(host_id, covering_host)
+                cluster.get_remote_cluster(remote_cluster_id).add_remote_member(covering_host)
     return cluster
 
 def printPlainSummary(cluster):
