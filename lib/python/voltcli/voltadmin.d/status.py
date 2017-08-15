@@ -63,20 +63,20 @@ def doStatus(runner):
                                   runner.opts.ssl_config)
         clusterInfo = getClusterInfo(runner)
         available_hosts.append(runner.opts.host.host)
-    else:    
+    else:
         for hostname in available_hosts:
             try:
                 runner.__voltdb_connect__(hostname,
                                   runner.opts.host.port,
                                   runner.opts.username,
                                   runner.opts.password,
-                                  runner.opts.ssl_config)   
+                                  runner.opts.ssl_config)
                 clusterInfo = getClusterInfo(runner)
-                if clusterInfo != None: 
+                if clusterInfo != None:
                     break
             except:
                 pass
-    
+
     if runner.opts.json:
         printJSONSummary(clusterInfo)
     else:
@@ -101,7 +101,7 @@ def doStatus(runner):
                     break
                 except Exception, e:
                     pass  # ignore it
-    
+
 def getClusterInfo(runner):
     global available_hosts
     response = runner.call_proc('@SystemInformation',
