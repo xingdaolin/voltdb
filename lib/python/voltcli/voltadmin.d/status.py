@@ -48,7 +48,7 @@ def status(runner):
                 # clear screen first
                 tmp = subprocess.call('clear', shell=True)
                 doStatus(runner)
-                
+
                 time.sleep(2)  # used to be runner.opts.interval, default as 2 seconds
         except KeyboardInterrupt, e:
             pass # don't care
