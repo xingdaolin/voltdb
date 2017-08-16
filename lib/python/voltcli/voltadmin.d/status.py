@@ -43,11 +43,15 @@ remote_clusters = {}
 
 def status(runner):
     if runner.opts.continuous:
-        while True:
-            # clear screen first
-            tmp = subprocess.call('clear', shell=True)
-            doStatus(runner)
-            time.sleep(2)  # used to be runner.opts.interval, default as 2 seconds
+        try:
+            while True:
+                # clear screen first
+                tmp = subprocess.call('clear', shell=True)
+                doStatus(runner)
+                
+                time.sleep(2)  # used to be runner.opts.interval, default as 2 seconds
+        except KeyboardInterrupt, e:
+            pass # don't care
     else:
         doStatus(runner)
 
@@ -234,10 +238,8 @@ def printPlainSummary(cluster):
     for hostId, hostname in cluster.hosts_by_id.items():
         row = "{:>8}{:>16}".format(hostId, hostname)
         for clusterId, remoteCluster in cluster.remoteclusters_by_id.items():
-            try:
-                row += '{:>17} s'.format(remoteCluster.producer_max_latency[hostname + str(clusterId)])
-            except Exception, e:
-                pass
+            # use get() to avoid keyError when node is shut down
+            row += '{:>17} s'.format(remoteCluster.producer_max_latency.get(hostname + str(clusterId), ''))
         rows.append(row)
 
     sys.stdout.write(header1)
