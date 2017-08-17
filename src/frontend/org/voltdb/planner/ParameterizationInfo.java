@@ -42,19 +42,15 @@ import org.voltdb.utils.VoltTypeUtil;
  */
 class ParameterizationInfo {
 
-    final VoltXMLElement originalXmlSQL;
     final VoltXMLElement parameterizedXmlSQL;
     final String[] paramLiteralValues;
 
-    public ParameterizationInfo(VoltXMLElement originalXmlSQL,
-                                VoltXMLElement parameterizedXmlSQL,
+    public ParameterizationInfo(VoltXMLElement parameterizedXmlSQL,
                                 String[] paramLiteralValues)
     {
         assert(parameterizedXmlSQL != null);
-        assert(originalXmlSQL != null);
         assert(paramLiteralValues != null);
 
-        this.originalXmlSQL = originalXmlSQL;
         this.parameterizedXmlSQL = parameterizedXmlSQL;
         this.paramLiteralValues = paramLiteralValues;
     }
@@ -64,18 +60,36 @@ class ParameterizationInfo {
 
         VoltXMLElement parameterizedXmlSQL = xmlSQL.duplicate();
 
+        List<VoltXMLElement> stmtNodes = new ArrayList<>();
+        findAllStmtNodes(stmtNodes, parameterizedXmlSQL);
+
         Map<String, Integer> idToParamIndexMap = new HashMap<String, Integer>();
         List<String> paramValues = new ArrayList<String>();
 
-        parameterizeRecursively(parameterizedXmlSQL, idToParamIndexMap, paramValues);
+        parameterizeStmtRecursively(stmtNodes, parameterizedXmlSQL, idToParamIndexMap, paramValues);
 
         ParameterizationInfo info = null;
         if(idToParamIndexMap.size() > 0) {
             info = new ParameterizationInfo(
-                xmlSQL, parameterizedXmlSQL,
+                parameterizedXmlSQL,
                 paramValues.toArray(new String[paramValues.size()]));
         }
         return info;
+    }
+
+    private static void findAllStmtNodes(List<VoltXMLElement> stmtNodes, VoltXMLElement node) {
+        if ("select".equals(node.name)
+                || "union".equals(node.name)
+                || "update".equals(node.name)
+                || "insert".equals(node.name)
+                || "delete".equals(node.name)
+                ) {
+            stmtNodes.add(node);
+        }
+
+        for (VoltXMLElement child : node.children) {
+            findAllStmtNodes(stmtNodes, child);
+        }
     }
 
     public static void findUserParametersRecursively(final VoltXMLElement xmlSQL, Set<Integer> paramIds) {
@@ -91,7 +105,7 @@ class ParameterizationInfo {
                     continue;
                 }
 
-                // "paramerters" element contains all the parameter infomation for the query
+                // "parameters" element contains all the parameter infomation for the query
                 // also including its subqueries if it has.
                 for (VoltXMLElement node : child.children) {
                     String idStr = node.attributes.get("id");
@@ -107,7 +121,8 @@ class ParameterizationInfo {
         }
     }
 
-    public static void parameterizeRecursively(VoltXMLElement parameterizedXmlSQL,
+    private static void parameterizeStmtRecursively(List<VoltXMLElement> stmtNodes,
+                                    VoltXMLElement parameterizedXmlSQL,
                                     Map<String, Integer> idToParamIndexMap,
                                     List<String> paramValues) {
         List<VoltXMLElement> unionChildren = null;
@@ -119,7 +134,7 @@ class ParameterizationInfo {
             while (iter.hasNext()) {
                 VoltXMLElement xmlChildSQL = iter.next();
                 if ("select".equals(xmlChildSQL.name) || "union".equals(xmlChildSQL.name)) {
-                    parameterizeRecursively(xmlChildSQL, idToParamIndexMap, paramValues);
+                    parameterizeStmtRecursively(stmtNodes, xmlChildSQL, idToParamIndexMap, paramValues);
                     // Temporarily remove it from the list
                     iter.remove();
                     unionChildren.add(xmlChildSQL);
@@ -127,14 +142,15 @@ class ParameterizationInfo {
             }
         }
         // Parameterize itself
-        parameterizeItself(parameterizedXmlSQL, idToParamIndexMap, paramValues);
+        parameterizeStmtItself(stmtNodes, parameterizedXmlSQL, idToParamIndexMap, paramValues);
         if (unionChildren != null) {
             // Add union children back
             parameterizedXmlSQL.children.addAll(unionChildren);
         }
     }
 
-    static void parameterizeItself(VoltXMLElement parameterizedXmlSQL,
+    private static void parameterizeStmtItself(List<VoltXMLElement> stmtNodes,
+                                    VoltXMLElement parameterizedXmlSQL,
                                     Map<String, Integer> idToParamIndexMap,
                                     List<String> paramValues) {
         // find the parameters xml node
@@ -157,11 +173,64 @@ class ParameterizationInfo {
             return;
         }
 
-        parameterizeRecursively(parameterizedXmlSQL, paramsNode,
+        parameterizeRecursively(stmtNodes, parameterizedXmlSQL, paramsNode,
                 idToParamIndexMap, paramValues);
     }
 
-    static void parameterizeRecursively(VoltXMLElement node,
+    private static void addParameterizedConstantToParameters(
+            List<VoltXMLElement> stmtNodes,
+            VoltXMLElement node,
+            Map<String, Integer> idToParamIndexMap,
+            List<String> paramValues) {
+
+        String idStr = node.attributes.get("id");
+        String typeStr = node.attributes.get("valuetype");
+
+        int paramIndex = paramValues.size();
+
+        // Later references to this value's id will re-use this same param index.
+        idToParamIndexMap.put(idStr, paramIndex);
+        VoltType vt = VoltType.typeFromString(typeStr);
+
+        String value = null;
+        if (vt != VoltType.NULL) {
+            value = node.attributes.get("value");
+        }
+        paramValues.add(value);
+
+        // If the type is NUMERIC from hsqldb, VoltDB has to decide its real type.
+        // It's either INTEGER or DECIMAL according to the SQL Standard.
+        // Thanks for Hsqldb 1.9, FLOAT literal values have been handled well with E sign.
+        if (vt == VoltType.NUMERIC) {
+            vt = VoltTypeUtil.getNumericLiteralType(VoltType.BIGINT, value);
+        }
+
+        node.attributes.put("valuetype", vt.getName());
+
+        for (VoltXMLElement stmtNode : stmtNodes) {
+            VoltXMLElement paramsNode = null;
+            for (VoltXMLElement child : stmtNode.children) {
+                if ("parameters".equals(child.name)) {
+                    paramsNode = child;
+                    break;
+                }
+            }
+
+            if (paramsNode == null) {
+                paramsNode = new VoltXMLElement("parameters");
+                stmtNode.children.add(paramsNode);
+            }
+
+            VoltXMLElement paramIndexNode = new VoltXMLElement("parameter");
+            paramIndexNode.attributes.put("index", String.valueOf(paramIndex));
+            paramIndexNode.attributes.put("id", idStr);
+            paramIndexNode.attributes.put("valuetype", vt.getName());
+            paramsNode.children.add(paramIndexNode);
+        }
+    }
+
+    private static void parameterizeRecursively(List<VoltXMLElement> stmtNodes,
+                                        VoltXMLElement node,
                                         VoltXMLElement paramsNode,
                                         Map<String, Integer> idToParamIndexMap,
                                         List<String> paramValues) {
@@ -175,36 +244,7 @@ class ParameterizationInfo {
             // within its parse trees without causing code like this to lose track of its identity.
             Integer paramIndex = idToParamIndexMap.get(idStr);
             if (paramIndex == null) {
-                // Use the next param index for each new value with an unfamiliar id,
-                // starting at 0.
-                paramIndex = paramValues.size();
-                // Later references to this value's id will re-use this same param index.
-                idToParamIndexMap.put(idStr, paramIndex);
-
-                VoltXMLElement paramIndexNode = new VoltXMLElement("parameter");
-                paramIndexNode.attributes.put("index", String.valueOf(paramIndex));
-                paramIndexNode.attributes.put("id", idStr);
-                paramsNode.children.add(paramIndexNode);
-
-                // handle parameter value type
-                String typeStr = node.attributes.get("valuetype");
-                VoltType vt = VoltType.typeFromString(typeStr);
-
-                String value = null;
-                if (vt != VoltType.NULL) {
-                    value = node.attributes.get("value");
-                }
-                paramValues.add(value);
-
-                // If the type is NUMERIC from hsqldb, VoltDB has to decide its real type.
-                // It's either INTEGER or DECIMAL according to the SQL Standard.
-                // Thanks for Hsqldb 1.9, FLOAT literal values have been handled well with E sign.
-                if (vt == VoltType.NUMERIC) {
-                    vt = VoltTypeUtil.getNumericLiteralType(VoltType.BIGINT, value);
-                }
-
-                node.attributes.put("valuetype", vt.getName());
-                paramIndexNode.attributes.put("valuetype", vt.getName());
+                addParameterizedConstantToParameters(stmtNodes, node, idToParamIndexMap, paramValues);
             }
 
             // Assume that all values, whether or not their ids have been seen before, can
@@ -226,11 +266,11 @@ class ParameterizationInfo {
         }
 
         for (VoltXMLElement child : node.children) {
-            parameterizeRecursively(child, paramsNode, idToParamIndexMap, paramValues);
+            parameterizeRecursively(stmtNodes, child, paramsNode, idToParamIndexMap, paramValues);
         }
     }
 
-    public static Object valueForStringWithType(String value, VoltType type) {
+    private static Object valueForStringWithType(String value, VoltType type) {
         if (type == VoltType.NULL) {
             return null;
         }
