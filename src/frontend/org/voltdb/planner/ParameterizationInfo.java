@@ -173,7 +173,7 @@ class ParameterizationInfo {
             return;
         }
 
-        parameterizeRecursively(stmtNodes, parameterizedXmlSQL, paramsNode,
+        parameterizeRecursively(stmtNodes, parameterizedXmlSQL,
                 idToParamIndexMap, paramValues);
     }
 
@@ -231,7 +231,6 @@ class ParameterizationInfo {
 
     private static void parameterizeRecursively(List<VoltXMLElement> stmtNodes,
                                         VoltXMLElement node,
-                                        VoltXMLElement paramsNode,
                                         Map<String, Integer> idToParamIndexMap,
                                         List<String> paramValues) {
         if (node.name.equals("value")) {
@@ -266,7 +265,7 @@ class ParameterizationInfo {
         }
 
         for (VoltXMLElement child : node.children) {
-            parameterizeRecursively(stmtNodes, child, paramsNode, idToParamIndexMap, paramValues);
+            parameterizeRecursively(stmtNodes, child, idToParamIndexMap, paramValues);
         }
     }
 
