@@ -29,7 +29,6 @@ from voltcli.checkstats import StatisticsProcedureException
 RELEASE_MAJOR_VERSION = 7
 RELEASE_MINOR_VERSION = 2
 available_hosts = []
-remote_clusters = {}
 
 @VOLT.Command(
     bundles=VOLT.AdminBundle(),
@@ -58,16 +57,15 @@ def status(runner):
 def doStatus(runner):
     # the cluster(host) which voltadmin is running on always comes first
     global available_hosts
-    if len(available_hosts) == 0:
+    try:
         if runner.client.host != runner.opts.host.host:
             runner.__voltdb_connect__(runner.opts.host.host,
                                   runner.opts.host.port,
                                   runner.opts.username,
                                   runner.opts.password,
                                   runner.opts.ssl_config)
-        clusterInfo = getClusterInfo(runner)
-        available_hosts.append(runner.opts.host.host)
-    else:
+        clusterInfo = getClusterInfo(runner, true)
+    except:
         for hostname in available_hosts:
             try:
                 runner.__voltdb_connect__(hostname,
@@ -75,7 +73,7 @@ def doStatus(runner):
                                   runner.opts.username,
                                   runner.opts.password,
                                   runner.opts.ssl_config)
-                clusterInfo = getClusterInfo(runner)
+                clusterInfo = getClusterInfo(runner, false)
                 if clusterInfo != None:
                     break
             except:
@@ -97,7 +95,7 @@ def doStatus(runner):
                                              runner.opts.username,
                                              runner.opts.password,
                                              runner.opts.ssl_config)
-                    clusterInfo = getClusterInfo(runner)
+                    clusterInfo = getClusterInfo(runner, false)
                     if runner.opts.json:
                         printJSONSummary(clusterInfo)
                     else:
@@ -106,8 +104,7 @@ def doStatus(runner):
                 except Exception, e:
                     pass  # ignore it
 
-def getClusterInfo(runner):
-    global available_hosts
+def getClusterInfo(runner, flag):
     response = runner.call_proc('@SystemInformation',
                                 [VOLT.FastSerializer.VOLTTYPE_STRING],
                                 ['OVERVIEW'])
@@ -119,9 +116,9 @@ def getClusterInfo(runner):
     for tuple in response.table(0).tuples():
         hosts.update(tuple[0], tuple[1], tuple[2])
 
-    for hostId, hostInfo in hosts.hosts_by_id.items():
-        if hostInfo.hostname not in available_hosts:
-            available_hosts.append(hostInfo.hostname)
+    # reset available hosts
+    if flag: 
+        available_hosts = hosts.hosts_by_id.keys()
 
     # get current version and root directory from an arbitrary node
     host = hosts.hosts_by_id.itervalues().next()
