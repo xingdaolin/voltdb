@@ -404,6 +404,18 @@ class VerbRunner(object):
         utility.verbose_info(response)
         return utility.VoltResponseWrapper(response)
 
+    def __call_proc__(self, sysproc_name, types, args, check_status=True, timeout=None):
+        if self.client is None:
+            utility.abort('Command is not set up as a client.',
+                          'Add an appropriate admin or client bundle to @VOLT.Command().')
+        utility.verbose_info('Call procedure: %s%s' % (sysproc_name, tuple(args)))
+        proc = voltdbclient.VoltProcedure(self.client, sysproc_name, types)
+        response = proc.call(params=args, timeout=timeout)
+        if check_status and response.status != 1:
+            raise Exception('"%s" procedure call failed.' % sysproc_name)
+        utility.verbose_info(response)
+        return utility.VoltResponseWrapper(response)
+
     def java_execute(self, java_class, java_opts_override, *args, **kwargs):
         """
         Execute a Java program.
